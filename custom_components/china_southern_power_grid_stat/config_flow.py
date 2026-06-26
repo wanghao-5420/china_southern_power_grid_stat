@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Config flow for China Southern Power Grid Statistics integration.
+"""Config flow for China Southern Power Grid Statistics integration.
 Steps:
 1. User input account credentials (username and password), the validity of credential verified
 2. Get all electricity accounts linked to the user account, let user select one of them
@@ -156,7 +155,6 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         client: CSGClient = CSGClient()
         username = self.context["user_data"][CONF_USERNAME]
-
         if user_input is None:
             await self.check_and_set_unique_id(username)
             errors = {}
@@ -183,27 +181,20 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors=errors,
                 description_placeholders={"error_detail": error_detail},
             )
-
         # sms code is present, validate with api
         password = self.context["user_data"][CONF_PASSWORD]
         login_type: LoginType = self.context["user_data"][CONF_LOGIN_TYPE]
         sms_code = user_input[CONF_SMS_CODE]
-
         errors = {}
         error_detail = ""
         try:
             if login_type == LoginType.LOGIN_TYPE_SMS:
                 auth_token = await self.hass.async_add_executor_job(
-                    client.api_login_with_sms_code,
-                    username,
-                    sms_code,
+                    client.api_login_with_sms_code, username, sms_code
                 )
             elif login_type == LoginType.LOGIN_TYPE_PWD_AND_SMS:
                 auth_token = await self.hass.async_add_executor_job(
-                    client.api_login_with_password_and_sms_code,
-                    username,
-                    password,
-                    sms_code,
+                    client.api_login_with_password_and_sms_code, username, password, sms_code
                 )
             else:
                 raise ValueError(
@@ -269,8 +260,8 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     {vol.Required(CONF_REFRESH_QR_CODE, default=False): bool}
                 ),
                 description_placeholders={
-                    "description": f"<p>使用{LOGIN_TYPE_TO_QR_APP_NAME[login_type]}扫码登录。登录完成后，点击下一步。"
-                    f'</p><img src="{image_link}" alt="QR code" style="width: 200px;"/>',
+                    "description": f"<p>使用{LOGIN_TYPE_TO_QR_APP_NAME[login_type]}扫码登录。登录完成后，点击下一步。</p>"
+                    f'<img src="{image_link}" alt="QR code" style="width: 200px;"/>',
                 },
             )
         if user_input[CONF_REFRESH_QR_CODE]:
@@ -296,7 +287,6 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.create_or_update_config_entry(
                 auth_token, login_type, "", username
             )
-
         # scan not detected, return to previous step
         image_link = self.context["user_data"]["image_link"]
         return self.async_show_form(
@@ -324,7 +314,8 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Create or update config entry
         If the account is newly added, create a new entry
-        If the account is already added (reauth), update the existing entry"""
+        If the account is already added (reauth), update the existing entry
+        """
         data = {
             CONF_USERNAME: username,
             CONF_PASSWORD: password,
@@ -349,7 +340,6 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reauth_successful")
         # normal creation
         # check if account already exists
-
         return self.async_create_entry(
             title=f"CSG-{username}",
             data=data,
@@ -366,8 +356,7 @@ class CSGConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Dialog that informs the user that reauth is required."""
         if user_input is None:
             return self.async_show_form(
-                step_id="reauth_confirm",
-                data_schema=vol.Schema({}),
+                step_id="reauth_confirm", data_schema=vol.Schema({})
             )
         return await self.async_step_user()
 
@@ -377,14 +366,14 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()  # ← 关键修复：调用父类初始化
+        self._config_entry = config_entry  # ← 使用私有变量存储
         self.all_electricity_accounts: list[CSGElectricityAccount] = []
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-
         schema = vol.Schema(
             {
                 vol.Required(CONF_ACTION, default=STEP_ADD_ACCOUNT): vol.In(
@@ -407,7 +396,6 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Select one of the electricity accounts from current account"""
         # account_no: f'{account_no} ({name} {addr})'
-
         all_csg_config_entries = self.hass.config_entries.async_entries(DOMAIN)
         # get a list of all account numbers from all config entries
         all_account_numbers = []
@@ -418,33 +406,30 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
             for account in self.all_electricity_accounts:
                 if account.account_number == account_num_to_add:
                     # store the account config in main entry instead of creating new entries
-                    new_data = self.config_entry.data.copy()
+                    new_data = self._config_entry.data.copy()
                     new_data[CONF_ELE_ACCOUNTS][account_num_to_add] = account.dump()
                     # this must be set or update won't be detected
                     new_data[CONF_UPDATED_AT] = str(int(time.time() * 1000))
                     self.hass.config_entries.async_update_entry(
-                        self.config_entry,
-                        data=new_data,
+                        self._config_entry, data=new_data
                     )
                     _LOGGER.info(
                         "Added ele account to %s: %s",
-                        self.config_entry.data[CONF_USERNAME],
+                        self._config_entry.data[CONF_USERNAME],
                         account_num_to_add,
                     )
                     _LOGGER.info("Reloading entry because of new added account")
                     await self.hass.config_entries.async_reload(
-                        self.config_entry.entry_id
+                        self._config_entry.entry_id
                     )
                     return self.async_create_entry(
-                        title="",
-                        data={},
+                        title="", data={}
                     )
         # end of handling add account
-
         # start of getting all unbound accounts
         client = CSGClient.load(
             {
-                CONF_AUTH_TOKEN: self.config_entry.data[CONF_AUTH_TOKEN],
+                CONF_AUTH_TOKEN: self._config_entry.data[CONF_AUTH_TOKEN],
             }
         )
         logged_in = await self.hass.async_add_executor_job(client.verify_login)
@@ -452,7 +437,6 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
             # token expired
             raise ConfigEntryAuthFailed("Login expired")
         await self.hass.async_add_executor_job(client.initialize)
-
         accounts = await self.hass.async_add_executor_job(
             client.get_all_electricity_accounts
         )
@@ -460,7 +444,7 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
         if not accounts:
             _LOGGER.warning(
                 "No linked ele accounts found in csg account %s",
-                self.config_entry.data[CONF_USERNAME],
+                self._config_entry.data[CONF_USERNAME],
             )
             return self.async_abort(reason=ABORT_NO_ACCOUNT)
         selections = {}
@@ -473,25 +457,23 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
         if not selections:
             _LOGGER.info(
                 "Account %s: no ele account to add (all already added), abort",
-                self.config_entry.data[CONF_USERNAME],
+                self._config_entry.data[CONF_USERNAME],
             )
             return self.async_abort(reason=ABORT_ALL_ADDED)
-
         schema = vol.Schema(
             {
                 vol.Required(CONF_ACCOUNT_NUMBER): vol.In(selections),
             }
         )
         return self.async_show_form(
-            step_id=STEP_ADD_ACCOUNT,
-            data_schema=schema,
+            step_id=STEP_ADD_ACCOUNT, data_schema=schema
         )
 
     async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Settings of parameters"""
-        update_interval = self.config_entry.data[CONF_SETTINGS][CONF_UPDATE_INTERVAL]
+        update_interval = self._config_entry.data[CONF_SETTINGS][CONF_UPDATE_INTERVAL]
         schema = vol.Schema(
             {
                 vol.Required(CONF_UPDATE_INTERVAL, default=update_interval): vol.All(
@@ -501,15 +483,12 @@ class CSGOptionsFlowHandler(config_entries.OptionsFlow):
         )
         if user_input is None:
             return self.async_show_form(step_id=STEP_SETTINGS, data_schema=schema)
-
-        new_data = self.config_entry.data.copy()
+        new_data = self._config_entry.data.copy()
         new_data[CONF_SETTINGS][CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
         new_data[CONF_UPDATED_AT] = str(int(time.time() * 1000))
         self.hass.config_entries.async_update_entry(
-            self.config_entry,
-            data=new_data,
+            self._config_entry, data=new_data
         )
         return self.async_create_entry(
-            title="",
-            data={},
+            title="", data={}
         )
